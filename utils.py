@@ -8,29 +8,25 @@ import os
 import torch
 
 def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditionalGeneration, AutoTokenizer]:
-    # Debug: list all files in the model directory
-    print(f"Contents of model directory {model_path}:")
-    if os.path.exists(model_path):
-        try:
-            files = os.listdir(model_path)
-            print(f"Files found: {files}")
-
-            # Check for subdirectories
-            subdirs = [f for f in files if os.path.isdir(os.path.join(model_path, f))]
-            if subdirs:
-                print(f"Subdirectories found: {subdirs}")
-                for subdir in subdirs:
-                    subdir_path = os.path.join(model_path, subdir)
-                    try:
-                        subfiles = os.listdir(subdir_path)
-                        print(f"Contents of {subdir}: {subfiles}")
-                    except Exception as e:
-                        print(f"Error listing {subdir}: {e}")
-
-        except Exception as e:
-            print(f"Error listing directory: {e}")
+    # Check if model files are directly in the path, or in a subdirectory
+    if os.path.exists(os.path.join(model_path, "config.json")) and os.path.exists(os.path.join(model_path, "tokenizer.json")):
+        actual_model_path = model_path
     else:
-        print(f"Directory {model_path} does not exist!")
+        # Look for subdirectories containing the model files
+        if os.path.exists(model_path):
+            subdirs = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+            for subdir in subdirs:
+                subdir_path = os.path.join(model_path, subdir)
+                if os.path.exists(os.path.join(subdir_path, "config.json")) and os.path.exists(os.path.join(subdir_path, "tokenizer.json")):
+                    actual_model_path = subdir_path
+                    print(f"Found model files in subdirectory: {actual_model_path}")
+                    break
+            else:
+                raise FileNotFoundError(f"Could not find model files in {model_path} or its subdirectories")
+        else:
+            raise FileNotFoundError(f"Model path {model_path} does not exist")
+
+    model_path = actual_model_path
 
     # Load the tokenizer
     try:
@@ -43,11 +39,10 @@ def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditional
         if os.path.exists(tokenizer_path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path, padding_side="right")
         else:
-            raise RuntimeError(f"Could not find tokenizer files in {model_path}. Available files: {files if 'files' in locals() else 'unknown'}")
+            raise RuntimeError(f"Could not find tokenizer files in {model_path}")
 
     # Load the .h5 weights file
     h5_file = os.path.join(model_path, "model.weights.h5")
-    print(f"Looking for model.weights.h5 at: {h5_file}")
     if not os.path.exists(h5_file):
         raise FileNotFoundError(f"model.weights.h5 not found in {model_path}")
 
@@ -60,12 +55,6 @@ def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditional
 
     # Load the model's config
     config_path = os.path.join(model_path, "config.json")
-    print(f"Looking for config.json at: {config_path}")
-    if not os.path.exists(config_path):
-        # List files in the directory to help debug
-        files = os.listdir(model_path) if os.path.exists(model_path) else []
-        raise FileNotFoundError(f"config.json not found in {model_path}. Available files: {files}")
-
     with open(config_path, "r") as f:
         model_config_file = json.load(f)
         config = PaliGemmaConfig(**model_config_file)
