@@ -2,24 +2,25 @@ from modeling_gemma import PaliGemmaForConditionalGeneration, PaliGemmaConfig
 from transformers import AutoTokenizer
 import json
 import glob
-from safetensors import safe_open
+import h5py
 from typing import Tuple
 import os
+import torch
 
 def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditionalGeneration, AutoTokenizer]:
     # Load the tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side="right")
     assert tokenizer.padding_side == "right"
 
-    # Find all the *.safetensors files
-    safetensors_files = glob.glob(os.path.join(model_path, "*.safetensors"))
+    # Load the .h5 weights file
+    h5_file = os.path.join(model_path, "model.weights.h5")
 
-    # ... and load them one by one in the tensors dictionary
+    # Load all tensors from the h5 file
     tensors = {}
-    for safetensors_file in safetensors_files:
-        with safe_open(safetensors_file, framework="pt", device="cpu") as f:
-            for key in f.keys():
-                tensors[key] = f.get_tensor(key)
+    with h5py.File(h5_file, 'r') as f:
+        for key in f.keys():
+            # Convert numpy arrays to torch tensors
+            tensors[key] = torch.from_numpy(f[key][()])
 
     # Load the model's config
     with open(os.path.join(model_path, "config.json"), "r") as f:
