@@ -1,5 +1,5 @@
 from modeling_gemma import PaliGemmaForConditionalGeneration, PaliGemmaConfig
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 import json
 import glob
 import h5py
@@ -9,11 +9,22 @@ import torch
 
 def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditionalGeneration, AutoTokenizer]:
     # Load the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side="right")
-    assert tokenizer.padding_side == "right"
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side="right")
+        assert tokenizer.padding_side == "right"
+    except Exception as e:
+        print(f"AutoTokenizer failed, trying to load tokenizer.json directly: {e}")
+        # Try to load tokenizer.json directly
+        tokenizer_path = os.path.join(model_path, "tokenizer.json")
+        if os.path.exists(tokenizer_path):
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path, padding_side="right")
+        else:
+            raise RuntimeError(f"Could not find tokenizer files in {model_path}")
 
     # Load the .h5 weights file
     h5_file = os.path.join(model_path, "model.weights.h5")
+    if not os.path.exists(h5_file):
+        raise FileNotFoundError(f"model.weights.h5 not found in {model_path}")
 
     # Load all tensors from the h5 file
     tensors = {}
@@ -23,7 +34,13 @@ def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditional
             tensors[key] = torch.from_numpy(f[key][()])
 
     # Load the model's config
-    with open(os.path.join(model_path, "config.json"), "r") as f:
+    config_path = os.path.join(model_path, "config.json")
+    if not os.path.exists(config_path):
+        # List files in the directory to help debug
+        files = os.listdir(model_path) if os.path.exists(model_path) else []
+        raise FileNotFoundError(f"config.json not found in {model_path}. Available files: {files}")
+
+    with open(config_path, "r") as f:
         model_config_file = json.load(f)
         config = PaliGemmaConfig(**model_config_file)
 
